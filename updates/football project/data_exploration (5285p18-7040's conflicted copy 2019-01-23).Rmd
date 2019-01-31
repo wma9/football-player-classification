@@ -1,0 +1,686 @@
+---
+title: "data explore"
+author: "Wanying Ma"
+date: "1/7/2018"
+output:
+  pdf_document: default
+  html_document:
+    df_print: paged
+header-includes:
+- \usepackage{bm}
+- \usepackage{amsmath}
+- \usepackage{booktabs}
+- \usepackage{pgfplots}
+- \usepackage{pgfplotstable}
+- \usepackage{multirow}
+- \usepackage{bm}
+- \usepackage{amsmath}
+- \usepackage{booktabs}
+- \usepackage{pgfplots}
+- \usepackage{pgfplotstable}
+- \usepackage{multirow}
+- \usepackage{bm}
+- \newcommand{\Real}{\mathbb{R}}
+- \newcommand{\dom}{{\bf dom}\,}
+- \newcommand{\Tra}{^{\sf T}} % Transpose
+- \newcommand{\Inv}{^{-1}} % Inverse
+- \def\vec{\mathop{\rm vec}\nolimits}
+- \def\sweep{\mathop{\rm sweep}\nolimits}
+- \newcommand{\diag}{\mathop{\rm diag}\nolimits}
+- \newcommand{\tr}{\operatorname{tr}} % Trace
+- \newcommand{\epi}{\operatorname{epi}} % epigraph
+- \newcommand{\V}[1]{{\bm{\mathbf{\MakeLowercase{#1}}}}} % vector
+- \newcommand{\VE}[2]{\MakeLowercase{#1}_{#2}} % vector element
+- \newcommand{\Vn}[2]{\V{#1}^{(#2)}} % n-th vector
+- \newcommand{\Vtilde}[1]{{\bm{\tilde \mathbf{\MakeLowercase{#1}}}}} % vector
+- \newcommand{\Vhat}[1]{{\bm{\hat \mathbf{\MakeLowercase{#1}}}}} % vector
+- \newcommand{\VtildeE}[2]{\tilde{\MakeLowercase{#1}}_{#2}} % vector element
+- \newcommand{\M}[1]{{\bm{\mathbf{\MakeUppercase{#1}}}}} % matrix
+- \newcommand{\ME}[2]{\MakeLowercase{#1}_{#2}} % matrix element
+- \newcommand{\Mtilde}[1]{{\bm{\tilde \mathbf{\MakeUppercase{#1}}}}} % matrix
+- \newcommand{\Mhat}[1]{{\bm{\hat \mathbf{\MakeUppercase{#1}}}}} % matrix
+- \newcommand{\Mcheck}[1]{{\bm{\check \mathbf{\MakeUppercase{#1}}}}} % matrix
+- \newcommand{\Mbar}[1]{{\bm{\bar \mathbf{\MakeUppercase{#1}}}}} % matrix
+- \newcommand{\Mn}[2]{\M{#1}^{(#2)}} % n-th matrix
+---
+
+## In this project, we intend to use the DTI scanning result on 27 tracts and 4 measurements for 195 players to cluster/classify 3 groups of players. The 3 groups stands for players who had head injury in the game, players at the same spot in the body contact game but without having head injury, and player at the same spot in the noncontact game without having head injury.
+
+## Access to data files
+
+```{r, echo=FALSE, warning=FALSE}
+library(dplyr)
+library(refund)
+# there are 195 players
+files <- list.files(path="C:/Users/wma9/Dropbox/Luo_Jarek_YC/csv_voxelwise", pattern="*.csv", full.names=FALSE, recursive=FALSE)
+
+subname <- gsub(pattern=".csv", replacement="", files)
+# there are 27 tracts 
+tractnames = c("ar_l",  "ar_r",  "atr_l", "atr_r", "cgc_l", "cgc_r", "cgh_l", "cgh_r", "cst_l", "cst_r","fma",   
+               "fmi", "ifo_l", "ifo_r", "ilf_l", "ilf_r", "mcp",  
+               "ml_l",  "ml_r",  "ptr_l", "ptr_r", "slf_l", "slf_r", "str_l" ,"str_r", "unc_l", "unc_r")
+# 200 quantiles we want to use
+den.quantiles = seq(0.25, 99.75, length=200)
+
+load("C:/Users/wma9/Dropbox/football project/alldata_qdtg1.Rdata")
+load("C:/Users/wma9/Dropbox/Luo_Jarek_YC/summary_data.Rdata")
+load("C:/Users/wma9/Dropbox/Luo_Jarek_YC/alldata_qdt.Rdata") #dim(alldata_qdt): 21052x203
+load("C:/Users/wma9/Dropbox/Luo_Jarek_YC/alldata_q.Rdata") #dim(alldata_qdt): 21052x203
+load("C:/Users/wma9/Dropbox/football project/alldata_qdtg2.Rdata") #dim(alldata_qdt): 21052x203
+```
+
+## Data preprocessing: 1. Add group index(merge with player information); 2. Keep only football players, and delete duplicates between 3 groups.
+```{r , echo=FALSE, warning=FALSE}
+#############################################################################
+######################### players information table #########################
+######################### create group index ################################
+######################### delete duplicates #################################
+#############################################################################
+
+player.info <- read.csv("/Users/mawanying/moon\ Dropbox/Wanying\ Ma/Luo_Jarek_YC/MRI_Injury_Description_03OCT18_All_Concussions_ForLuo.csv") #player.info is 136x9
+
+#player.info <- read.csv("C:/Users/wma9/Dropbox/Luo_Jarek_YC/MRI_Injury_Description_03OCT18_All_Concussions_ForLuo.csv") #player.info is 136x9
+basic.info <- player.info %>% select(SUBJECTSTUDYNUM, INJURYSPORTVARSITY, CONTACTSPORTQGID, NONCONTACTSPORTQGID) #basic.info is 136x4
+basic.info <- basic.info %>% filter(SUBJECTSTUDYNUM!='', CONTACTSPORTQGID!='', NONCONTACTSPORTQGID !='') #delete lines which has empty values: 109x4
+basic.info <- unique(basic.info) #delete duplite lines: 94x4
+football.info <- basic.info %>% filter(INJURYSPORTVARSITY=='Football') #football.info is 55x4
+#first in second
+d1 <- football.info$SUBJECTSTUDYNUM %in% football.info$CONTACTSPORTQGID
+#first in third
+d2 <- football.info$SUBJECTSTUDYNUM %in% football.info$NONCONTACTSPORTQGID
+#second in first
+d3 <- football.info$CONTACTSPORTQGID %in% football.info$SUBJECTSTUDYNUM
+#second in third
+d4 <- football.info$CONTACTSPORTQGID %in% football.info$NONCONTACTSPORTQGID
+#third in first
+d5 <- football.info$NONCONTACTSPORTQGID %in% football.info$SUBJECTSTUDYNUM
+#third in second
+d6 <- football.info$NONCONTACTSPORTQGID %in% football.info$CONTACTSPORTQGID
+dupli <- cbind(d1, d2, d3, d4, d5, d6) #88x6
+football.noDup <- football.info[rowSums(dupli)<1, ] # football.noDup is 47x4
+
+#############################################################################
+############## construct group index for football players ###################
+##############      group1: SUBJECTSTUDYNUM                 ############
+##############      group2: CONTACTSPORTQGID                ############
+##############      group3: NONCONTACTSPORTQGID             ############
+#############################################################################
+group1 <- unique(as.character(football.noDup$SUBJECTSTUDYNUM))     #SUBJECTSTUDYNUM 47x1
+group2 <- unique(as.character(football.noDup$CONTACTSPORTQGID))    #CONTACTSPORTQGID 47x1
+group3 <- unique(as.character(football.noDup$NONCONTACTSPORTQGID)) #NONCONTACTSPORTQGID 47x1
+
+# after merge, alldata_fb will have 28 players in group 1, 31players in group 2, 29 players in group 3
+#############################################################################
+alldata.player <- as.character(alldata$player) #21052x1
+alldata.fb.player <- alldata.player %in% c(group1, group2, group3) #indicator vector: 9496x1
+groupindex <- c()
+for(i in alldata.player[alldata.fb.player]){
+  if(i %in% group1){
+    groupindex <- c(groupindex, 1)
+  }
+  if(i %in% group2){
+    groupindex <- c(groupindex, 2)
+  }
+  if(i %in% group3){
+    groupindex <- c(groupindex, 3)
+  }
+}
+
+addgroupindex <- function(data, football_index, groupindex){
+  fbdata <- data[football_index, ]
+  data.fb <- fbdata %>% mutate(group=groupindex)
+  return(data.fb)
+}
+alldata.fb <- addgroupindex(alldata, alldata.fb.player, groupindex) #9496x204
+alldata.fb_qdt <- addgroupindex(alldata_qdt, alldata.fb.player, groupindex) #9496x204
+alldata.fb_q <- addgroupindex(alldata_q, alldata.fb.player, groupindex) #9496x204
+alldata.fb_qdtg <- addgroupindex(alldata_qdtg, alldata.fb.player, groupindex)
+colnames(alldata.fb)[4:203] <- colnames(alldata.fb_qdt)[4:203] <- colnames(alldata.fb_q)[4:203] <- colnames(alldata.fb_qdtg)[4:203] <- paste0("den", 1:200)
+#table(alldata.fb$group)
+#1    2    3 
+#3016 3348 3132 
+#length(unique(alldata.fb$player[alldata.fb$group==1])) #28
+#length(unique(alldata.fb$player[alldata.fb$group==2])) #31
+#length(unique(alldata.fb$player[alldata.fb$group==3])) #29
+# there are 88 different players in total for alldata.fb
+#alldata_fb will have 28 players in group 1, 31 players in group 2, 29 players in group 3
+```
+
+## cluster
+### Using equally-spaced density(no transformation), as well as quantile-density transformation of density $-log(f(Q(t)))$
+```{r, echo=FALSE, warning=FALSE}
+fPCs <- function(data, iter){
+  # data: input dataset
+  # m: measurement, in {"FA", "MD", "Da", "Dr"}
+  # t: tract
+  t <- as.character(para[iter, 1])
+  m <- as.character(para[iter, 2])
+  data.tm <- data %>% filter(tract==t, measure==m, group !=3) #86x204
+  den.tm <- select(data.tm, den1:den200)    #86x200
+  den.tm <- den.tm - as.vector(rep(1, dim(den.tm)[1])) %*% t(colMeans(den.tm))
+  den.fpca <- refund::fpca.face(data.matrix(den.tm), center = TRUE, argvals = (1:200)/200, knots = 7, pve = .99, p = 5, lambda = 0)
+  dim(den.fpca$efunctions)[2]
+}
+fPCss1 <- fPCss2 <- fPCss3 <- fPCss4 <- c()
+for (i in 1:108){
+  fPCss1 <- c(fPCss1, fPCs(alldata.fb, i))
+  fPCss2 <- c(fPCss2, fPCs(alldata.fb_q, i))
+  fPCss3 <- c(fPCss3, fPCs(alldata.fb_qdt, i))
+  fPCss4 <- c(fPCss4, fPCs(alldata.fb_qdtg, i))
+}
+
+#den .95:
+#fPCss
+# 2  3  4  5 
+#26 59 20  3 
+
+#q .95
+#fPCss
+# 2  3  4 
+#15 73 20
+
+#fPCss .95
+#qdt
+# 4  5  6  7  8 
+# 3 19 36 43  7 
+
+#qdtg .95:
+#fPCss
+# 4  5  6  7  8 
+# 9 18 31 39 11
+
+#######################
+#den .99:
+#fPCss
+#3  4  5  6 
+#16 58 29  5 
+
+#q .99
+#fPCss
+# 4  5  6  7 
+#29 48 30  1 
+
+#fPCss .99
+#qdt
+# 7  8  9 10 11 
+# 2 18 35 50  3
+
+#qdtg .99:
+#fPCss
+# 7  8  9 10 11 
+# 5 18 37 44  4 
+
+###################### only group 1 and group 2 ################
+#only 2 clusters
+
+#den .95:
+#fPCss
+# 2  3  4  5 
+#32 57 16  3  
+
+#q .95
+#fPCss
+# 2  3  4 
+#10 73 25 
+
+#fPCss .95
+#qdt
+# 4  5  6  7  8 
+# 3 22 34 44  5
+
+#qdtg .95:
+#fPCss
+#  4  5  6  7  8 
+# 7 20 32 41  8
+
+#######################
+#den .99:
+#fPCss
+#3  4  5  6 
+#18 57 28  5  
+
+#q .99
+#fPCss
+#3  4  5  6  7 
+#1 24 48 34  1
+
+#fPCss .99
+#qdt
+# 7  8  9 10 11 
+# 3 22 38 44  1
+
+#qdtg .99:
+#fPCss
+# 7  8  9 10 11 
+# 4 21 44 38  1 
+
+
+m.tract.cluster <- function(data, iter){
+  # data: input dataset
+  # m: measurement, in {"FA", "MD", "Da", "Dr"}
+  # t: tract
+  t <- as.character(para[iter, 1])
+  m <- as.character(para[iter, 2])
+  data.tm <- data %>% filter(tract==t, measure==m) #88x204
+  group.tm <- data.tm$group
+  den.tm <- select(data.tm, den1:den200)    #88x200
+  den.tm <- den.tm - as.vector(rep(1, dim(den.tm)[1])) %*% t(colMeans(den.tm))
+  den.fpca <- refund::fpca.face(data.matrix(den.tm), center = TRUE, argvals = (1:200)/200, knots = 7, pve = 0.95, p = 5, lambda = NULL)
+  den.score <- den.fpca$scores/sqrt(dim(den.tm)[2]) #86x5
+  den.cluster <- kmeans(den.score, centers = 3)
+ 
+permute <- function(vec, p1, p2, p3){
+  for(i in 1:length(vec)){
+    if(vec[i]==1){
+      vec[i] <- p1
+    }else{
+      if(vec[i]==2){vec[i] <- p2}else{
+        vec[i] <- p3
+      }
+    }
+  }
+  return(vec)  
+}
+
+
+  perm1 <- permute(den.cluster$cluster, 1,2,3)
+  perm2 <- permute(den.cluster$cluster, 1,3,2)
+  perm3 <- permute(den.cluster$cluster, 2,1,3)
+  perm4 <- permute(den.cluster$cluster, 2,3,1)
+  perm5 <- permute(den.cluster$cluster, 3,1,2)
+  perm6 <- permute(den.cluster$cluster, 3,2,1)
+  misrate <- min(sum(perm1!=data.tm$group)/length(data.tm$group),
+      sum(perm2!=data.tm$group)/length(data.tm$group),
+      sum(perm3!=data.tm$group)/length(data.tm$group),
+      sum(perm4!=data.tm$group)/length(data.tm$group),
+      sum(perm5!=data.tm$group)/length(data.tm$group),
+      sum(perm6!=data.tm$group)/length(data.tm$group))
+  data.tm.comb = cbind(data.tm, den.score)
+  return(list(misrate=misrate,
+              data.tm.comb=data.tm.comb,
+              den.fpca=den.fpca))
+}
+
+m.tract.cluster2 <- function(data, iter){
+  # data: input dataset
+  # m: measurement, in {"FA", "MD", "Da", "Dr"}
+  # t: tract
+  t <- as.character(para[iter, 1])
+  m <- as.character(para[iter, 2])
+  
+  data.tm <- data %>% filter(tract==t, measure==m, group != 3) #86x204
+  den.tm <- select(data.tm, den1:den200)    #86x200
+  #den.tm <- den.tm - as.vector(rep(1, dim(den.tm)[1])) %*% t(colMeans(den.tm))
+  den.fpca <- refund::fpca.face(data.matrix(den.tm), center = TRUE, argvals = (1:200)/200, knots = 7, pve = 0.95, p = 5, lambda = NULL)
+  den.score <- den.fpca$scores/sqrt(dim(den.tm)[2]) #86x5
+  den.cluster <- kmeans(den.score, centers = 2)
+  permute <- function(vec, p1, p2){
+    for(i in 1:length(vec)){
+      if(vec[i]==1){vec[i] <- p1}else{vec[i] <- p2}
+    }
+    return(vec)
+  }
+  perm1 <- permute(den.cluster$cluster, 1,2)
+  perm2 <- permute(den.cluster$cluster, 2,1)
+  misrate <- min(sum(perm1!=data.tm$group)/length(data.tm$group),
+                 sum(perm2!=data.tm$group)/length(data.tm$group))
+  data.tm.comb = cbind(data.tm, den.score)
+  return(list(misrate=misrate,
+              data.tm.comb=data.tm.comb,
+              den.fpca=den.fpca))
+}
+
+```
+
+
+##cluster results
+```{r,echo=FALSE, warning=FALSE}
+para <- expand.grid(tractnames, c("FA","MD","Da","Dr"))
+## equally spaced density 3 clusters 
+misrate_FA <- sapply(1:27, function(x) m.tract.cluster(alldata.fb, x)$misrate)
+misrate_MD <- sapply(28:54, function(x) m.tract.cluster(alldata.fb, x)$misrate)
+misrate_Da <- sapply(55:81, function(x) m.tract.cluster(alldata.fb, x)$misrate)
+misrate_Dr <- sapply(82:108, function(x) m.tract.cluster(alldata.fb, x)$misrate)
+
+misrate_FA_q <- sapply(1:27, function(x) m.tract.cluster(alldata.fb_q, x)$misrate)
+misrate_MD_q <- sapply(28:54, function(x) m.tract.cluster(alldata.fb_q, x)$misrate)
+misrate_Da_q <- sapply(55:81, function(x) m.tract.cluster(alldata.fb_q, x)$misrate)
+misrate_Dr_q <- sapply(82:108, function(x) m.tract.cluster(alldata.fb_q, x)$misrate)
+
+
+cat("Misrate for 3 clusters:\n")
+cat("No transformation: FA\n")
+misrate_FA[order(misrate_FA)[1:5]]
+cat("No transformation: MD\n")
+misrate_MD[order(misrate_MD)[1:5]]
+cat("No transformation: Da\n")
+misrate_Da[order(misrate_Da)[1:5]]
+cat("No transformation: Dr\n")
+misrate_Dr[order(misrate_Dr)[1:5]]
+cat("Corresponding tracts:\n")
+cat("FA:\n")
+tractnames[order(misrate_FA)[1:5]]
+cat("MD:\n")
+tractnames[order(misrate_MD)[1:5]]
+cat("Da:\n")
+tractnames[order(misrate_Da)[1:5]]
+cat("Dr:\n")
+tractnames[order(misrate_Dr)[1:5]]
+
+
+
+## use quantile-density transformation corresponding to quantiles 3 clusters
+misrate_FA_qdt <- sapply(1:27, function(x) m.tract.cluster(alldata.fb_qdt, x)$misrate)
+misrate_MD_qdt <- sapply(28:54, function(x) m.tract.cluster(alldata.fb_qdt, x)$misrate)
+misrate_Da_qdt <- sapply(55:81, function(x) m.tract.cluster(alldata.fb_qdt, x)$misrate)
+misrate_Dr_qdt <- sapply(82:108, function(x) m.tract.cluster(alldata.fb_qdt, x)$misrate)
+
+cat("Misrate for 3 clusters:\n")
+cat("Quantile-density transformation: FA\n")
+misrate_FA_qdt[order(misrate_FA_qdt)[1:5]]
+cat("Quantile-density transformation: MD\n")
+misrate_MD_qdt[order(misrate_MD_qdt)[1:5]]
+cat("Quantile-density transformation: Da\n")
+misrate_Da_qdt[order(misrate_Da_qdt)[1:5]]
+cat("Quantile-density transformation: Dr\n")
+misrate_Dr_qdt[order(misrate_Dr_qdt)[1:5]]
+
+cat("Corresponding tracts:\n")
+cat("FA:\n")
+tractnames[order(misrate_FA_qdt)[1:5]]
+cat("MD:\n")
+tractnames[order(misrate_MD_qdt)[1:5]]
+cat("Da:\n")
+tractnames[order(misrate_Da_qdt)[1:5]]
+cat("Dr:\n")
+tractnames[order(misrate_Dr_qdt)[1:5]]
+
+# use quantile-density transformation but using global min and max to perform standardization
+misrate_FA_qdtg <- sapply(1:27, function(x) m.tract.cluster(alldata.fb_qdtg, x)$misrate)
+misrate_MD_qdtg <- sapply(28:54, function(x) m.tract.cluster(alldata.fb_qdtg, x)$misrate)
+misrate_Da_qdtg <- sapply(55:81, function(x) m.tract.cluster(alldata.fb_qdtg, x)$misrate)
+misrate_Dr_qdtg <- sapply(82:108, function(x) m.tract.cluster(alldata.fb_qdtg, x)$misrate)
+
+
+summary_res <- data.frame(Measure=c(rep("FA",5), rep("MD",5), rep("Da",5), rep("Dr",5)), 
+           misrate_d=c(misrate_FA[order(misrate_FA)[1:5]], 
+                           misrate_MD[order(misrate_MD)[1:5]],
+                           misrate_Da[order(misrate_Da)[1:5]],
+                           misrate_Dr[order(misrate_Dr)[1:5]]),
+           misrate_q=c(misrate_FA_q[order(misrate_FA_q)[1:5]], 
+                           misrate_MD_q[order(misrate_MD_q)[1:5]],
+                           misrate_Da_q[order(misrate_Da_q)[1:5]],
+                           misrate_Dr_q[order(misrate_Dr_q)[1:5]]),
+           misrate_qdt=c(misrate_FA_qdt[order(misrate_FA_qdt)[1:5]], 
+                           misrate_MD_qdt[order(misrate_MD_qdt)[1:5]],
+                           misrate_Da_qdt[order(misrate_Da_qdt)[1:5]],
+                           misrate_Dr_qdt[order(misrate_Dr_qdt)[1:5]]),
+           misrate_qdtg=c(misrate_FA_qdtg[order(misrate_FA_qdtg)[1:5]], 
+                           misrate_MD_qdtg[order(misrate_MD_qdtg)[1:5]],
+                           misrate_Da_qdtg[order(misrate_Da_qdtg)[1:5]],
+                           misrate_Dr_qdtg[order(misrate_Dr_qdtg)[1:5]]),
+           tract_d=c(tractnames[order(misrate_FA)[1:5]], 
+                           tractnames[order(misrate_MD)[1:5]],
+                           tractnames[order(misrate_Da)[1:5]],
+                           tractnames[order(misrate_Dr)[1:5]]),
+           tract_q=c(tractnames[order(misrate_FA_q)[1:5]], 
+                           tractnames[order(misrate_MD_q)[1:5]],
+                           tractnames[order(misrate_Da_q)[1:5]],
+                           tractnames[order(misrate_Dr_q)[1:5]]),
+           tract_qdt=c(tractnames[order(misrate_FA_qdt)[1:5]], 
+                           tractnames[order(misrate_MD_qdt)[1:5]],
+                           tractnames[order(misrate_Da_qdt)[1:5]],
+                           tractnames[order(misrate_Dr_qdt)[1:5]]))
+```
+## only cluster first two groups
+```{r, echo=FALSE}
+# 2 cluster density
+misrate_FA2 <- sapply(1:27,  function(x) m.tract.cluster2(alldata.fb, x)$misrate)
+misrate_MD2 <- sapply(28:54, function(x) m.tract.cluster2(alldata.fb, x)$misrate)
+misrate_Da2 <- sapply(55:81, function(x) m.tract.cluster2(alldata.fb, x)$misrate)
+misrate_Dr2 <- sapply(82:108,function(x) m.tract.cluster2(alldata.fb, x)$misrate)
+cat("Misrate for 2 clusters:\n")
+cat("No transformation: FA\n")
+misrate_FA2[order(misrate_FA2)[1:5]]
+cat("No transformation: MD\n")
+misrate_MD2[order(misrate_MD2)[1:5]]
+cat("No transformation: Da\n")
+misrate_Da2[order(misrate_Da2)[1:5]]
+cat("No transformation: Dr\n")
+misrate_Dr2[order(misrate_Dr2)[1:5]]
+
+cat("Corresponding tracts:\n")
+cat("FA:\n")
+tractnames[order(misrate_FA2)[1:5]]
+cat("MD:\n")
+tractnames[order(misrate_MD2)[1:5]]
+cat("Da:\n")
+tractnames[order(misrate_Da2)[1:5]]
+cat("Dr:\n")
+tractnames[order(misrate_Dr2)[1:5]]
+
+
+#use quantile-density transformation corresponding to quantiles 2 clusters
+misrate_FA_q2 <- sapply(1:27,  function(x) m.tract.cluster2(alldata.fb_q, x)$misrate)
+misrate_MD_q2 <- sapply(28:54, function(x) m.tract.cluster2(alldata.fb_q, x)$misrate)
+misrate_Da_q2 <- sapply(55:81, function(x) m.tract.cluster2(alldata.fb_q, x)$misrate)
+misrate_Dr_q2 <- sapply(82:108,function(x) m.tract.cluster2(alldata.fb_q, x)$misrate)
+
+misrate_FA_qdt2 <- sapply(1:27,  function(x) m.tract.cluster2(alldata.fb_qdt, x)$misrate)
+misrate_MD_qdt2 <- sapply(28:54, function(x) m.tract.cluster2(alldata.fb_qdt, x)$misrate)
+misrate_Da_qdt2 <- sapply(55:81, function(x) m.tract.cluster2(alldata.fb_qdt, x)$misrate)
+misrate_Dr_qdt2 <- sapply(82:108,function(x) m.tract.cluster2(alldata.fb_qdt, x)$misrate)
+cat("Misrate for 2 clusters:\n")
+cat(" FA\n")
+misrate_FA_qdt2[order(misrate_FA_qdt2)[1:5]]
+cat("qd transformation: MD\n")
+misrate_MD_qdt2[order(misrate_MD_qdt2)[1:5]]
+cat("qd transformation: Da\n")
+misrate_Da_qdt2[order(misrate_Da_qdt2)[1:5]]
+cat("qd transformation: Dr\n")
+misrate_Dr_qdt2[order(misrate_Dr_qdt2)[1:5]]
+
+cat("Corresponding tracts:\n")
+cat("Quantile-density transformation: FA\n")
+tractnames[order(misrate_FA_qdt2)[1:5]]
+cat("Quantile-density transformation: MD\n")
+tractnames[order(misrate_MD_qdt2)[1:5]]
+cat("Quantile-density transformation: Da\n")
+tractnames[order(misrate_Da_qdt2)[1:5]]
+cat("Quantile-density transformation: Dr\n")
+tractnames[order(misrate_Dr_qdt2)[1:5]]
+
+#use quantile-density transformation corresponding to quantiles 2 clusters but with global min and max 
+misrate_FA_qdtg2 <- sapply(1:27,  function(x) m.tract.cluster2(alldata.fb_qdtg, x)$misrate)
+misrate_MD_qdtg2 <- sapply(28:54, function(x) m.tract.cluster2(alldata.fb_qdtg, x)$misrate)
+misrate_Da_qdtg2 <- sapply(55:81, function(x) m.tract.cluster2(alldata.fb_qdtg, x)$misrate)
+misrate_Dr_qdtg2 <- sapply(82:108,function(x) m.tract.cluster2(alldata.fb_qdtg, x)$misrate)
+
+
+
+summary_res2 <- data.frame(Measure=c(rep("FA",5), rep("MD",5), rep("Da",5), rep("Dr",5)), 
+           misrate_d=c(misrate_FA2[order(misrate_FA2)[1:5]], 
+                           misrate_MD2[order(misrate_MD2)[1:5]],
+                           misrate_Da2[order(misrate_Da2)[1:5]],
+                           misrate_Dr2[order(misrate_Dr2)[1:5]]),
+           misrate_q=c(misrate_FA_q2[order(misrate_FA_q2)[1:5]], 
+                           misrate_MD_q2[order(misrate_MD_q2)[1:5]],
+                           misrate_Da_q2[order(misrate_Da_q2)[1:5]],
+                           misrate_Dr_q2[order(misrate_Dr_q2)[1:5]]),
+           misrate_qdt=c(misrate_FA_qdt2[order(misrate_FA_qdt2)[1:5]], 
+                           misrate_MD_qdt2[order(misrate_MD_qdt2)[1:5]],
+                           misrate_Da_qdt2[order(misrate_Da_qdt2)[1:5]],
+                           misrate_Dr_qdt2[order(misrate_Dr_qdt2)[1:5]]),
+           misrate_qdtg=c(misrate_FA_qdtg2[order(misrate_FA_qdtg2)[1:5]], 
+                           misrate_MD_qdtg2[order(misrate_MD_qdtg2)[1:5]],
+                           misrate_Da_qdtg2[order(misrate_Da_qdtg2)[1:5]],
+                           misrate_Dr_qdtg2[order(misrate_Dr_qdtg2)[1:5]]),
+           tract_d=c(tractnames[order(misrate_FA2)[1:5]], 
+                           tractnames[order(misrate_MD2)[1:5]],
+                           tractnames[order(misrate_Da2)[1:5]],
+                           tractnames[order(misrate_Dr2)[1:5]]),
+           tract_q=c(tractnames[order(misrate_FA_q2)[1:5]], 
+                           tractnames[order(misrate_MD_q2)[1:5]],
+                           tractnames[order(misrate_Da_q2)[1:5]],
+                           tractnames[order(misrate_Dr_q2)[1:5]]),
+           tract_qdt=c(tractnames[order(misrate_FA_qdt2)[1:5]], 
+                           tractnames[order(misrate_MD_qdt2)[1:5]],
+                           tractnames[order(misrate_Da_qdt2)[1:5]],
+                           tractnames[order(misrate_Dr_qdt2)[1:5]]),
+           tract_qdtg=c(tractnames[order(misrate_FA_qdtg2)[1:5]], 
+                           tractnames[order(misrate_MD_qdtg2)[1:5]],
+                           tractnames[order(misrate_Da_qdtg2)[1:5]],
+                           tractnames[order(misrate_Dr_qdtg2)[1:5]]))
+
+```
+## Visualized variation modes
+```{r}
+#fb_score <- lapply(1:dim(para)[1], function(x) m.tract.cluster2(alldata.fb, x)$data.tm.comb)
+#fb_score <- do.call(rbind, fb_score) #9280x209
+#fb_scorefpca <- lapply(1:dim(para)[1], function(x) m.tract.cluster2(alldata.fb, x)$den.fpca)
+
+var_mode <- function(data, m, t, title, qd){
+loc_m <- which(para[,2]==m)
+loc <- loc_m[which(para[loc_m,1]==t)] #loc in the para that is tract=='unc_r', measure=='Da'
+fb_scorefpca <- lapply(loc, function(x) m.tract.cluster2(data, x)$den.fpca)
+
+eigenf <- fb_scorefpca[[1]]$efunctions*sqrt(200)
+eigens <- fb_scorefpca[[1]]$scores/sqrt(200)
+mean <- fb_scorefpca[[1]]$mu
+pc1_score_q <- quantile(eigens[,1], c(0.1, 0.25, 0.75, 0.95))
+modes1 <- cbind(t(as.vector(pc1_score_q)%*% t(eigenf[,1])) + mean, mean) #200x5
+pc2_score_q <- quantile(eigens[,2], c(0.1, 0.25, 0.75, 0.95))
+modes2 <- cbind(t(as.vector(pc2_score_q)%*% t(eigenf[,2])) + mean, mean) #200x5
+pc3_score_q <- quantile(eigens[,3], c(0.1, 0.25, 0.75, 0.95))
+modes3 <- cbind(t(as.vector(pc3_score_q)%*% t(eigenf[,3])) + mean, mean) #200x5
+
+tran_back <- function(den.tran.y, den.quantiles){
+  thetax <- sum((head(exp(den.tran.y), -1)+tail(exp(den.tran.y), -1))/2*(diff(den.quantiles/100)[1]))
+
+  tranback_x <- sapply(1:200, function(x){
+    sum((head(exp(den.tran.y)[1:x], -1)+tail(exp(den.tran.y)[1:x],-1))/2*(diff(den.quantiles/100)[1]))/thetax
+  })
+  tranback_y <- exp(-den.tran.y)*thetax
+  return(list(tranback_x=tranback_x,
+              tranback_y=tranback_y,
+              thetax=thetax)) 
+}
+
+if(qd==0){
+matplot(den.quantiles/100, modes1, main=paste0("1st PC modes, ",title, "\n tract:", t, ", measure:", m),
+        xlab="t", ylab=expression(psi(t)), 
+        col=c("red","pink","green","blue", "black"), type="l", 
+        lty=c(1,1,1,1,1), lwd=c(1,1,1,1,1.5))
+abline(h=0, col="grey", lwd=1, lty=2)
+legend("topleft", c(expression(alpha[1]), expression(alpha[2]), expression(alpha[3]), expression(alpha[4]), expression(alpha[5])), col=c("red","pink","black","green","blue"), lty=c(1,1,1,1,1), lwd=c(1,1,1.5,1,1), cex=0.8, bty='n')
+
+matplot(den.quantiles/100, modes2, main=paste0("2nd PC modes, ",title, "\n tract:", t, ", measure:", m),
+        xlab="t", ylab=expression(psi(t)), 
+        col=c("red","pink","green","blue", "black"), type="l",
+        lty=c(1,1,1,1,1), lwd=c(1,1,1,1,1.5))
+abline(h=0, col="grey", lwd=1, lty=2)
+legend("topleft", c(expression(alpha[1]), expression(alpha[2]), expression(alpha[3]), expression(alpha[4]), expression(alpha[5])), col=c("red","pink","black","green","blue"), lty=c(1,1,1,1,1), lwd=c(1,1,1.5,1,1), cex=0.8, bty='n')
+
+}
+if(qd==1){
+tran_den <- lapply(data.frame(modes1), function(x){tran_back(x, den.quantiles)}) 
+plot(tran_den[[1]]$tranback_x, tran_den[[1]]$tranback_y, type="l",main=paste0("1st PC modes, ",title, "\n tract:", t, ", measure:", m), col="red", ylim=c(0, max(c(tran_den[[1]]$tranback_y, tran_den[[2]]$tranback_y,
+                                tran_den[[3]]$tranback_y, tran_den[[4]]$tranback_y,
+                                tran_den[[5]]$tranback_y))),
+     xlab="x", ylab=expression(psi^{-1}(x)))
+abline(h=0, col="grey", lwd=1, lty=2)
+lines(tran_den[[2]]$tranback_x, tran_den[[2]]$tranback_y, type="l", col="pink")
+lines(tran_den[[3]]$tranback_x, tran_den[[3]]$tranback_y, type="l", col="green")
+lines(tran_den[[4]]$tranback_x, tran_den[[4]]$tranback_y, type="l", col="blue")
+lines(tran_den[[5]]$tranback_x, tran_den[[5]]$tranback_y,col="black", lwd=1.5)
+legend("topleft", c(expression(alpha[1]), expression(alpha[2]), expression(alpha[3]), expression(alpha[4]), expression(alpha[5])), col=c("red","pink","black","green","blue"), lty=c(1,1,1,1,1), lwd=c(1,1,1.5,1,1), cex=0.8, bty='n')
+
+tran_den2 <- lapply(data.frame(modes2), function(x){tran_back(x, den.quantiles)}) 
+plot(tran_den2[[1]]$tranback_x, tran_den2[[1]]$tranback_y, type="l",main=paste0("2nd PC modes, ",title, "\n tract:", t, ", measure:", m),
+     xlab="x", ylab=expression(psi^{-1}(x)), 
+     col="red", ylim=c(0, max(c(tran_den2[[1]]$tranback_y, tran_den2[[2]]$tranback_y, 
+                                tran_den2[[3]]$tranback_y, tran_den2[[4]]$tranback_y,
+                                tran_den2[[5]]$tranback_y))))
+abline(h=0, col="grey", lwd=1, lty=2)
+lines(tran_den2[[2]]$tranback_x, tran_den2[[2]]$tranback_y, type="l", col="pink")
+lines(tran_den2[[3]]$tranback_x, tran_den2[[3]]$tranback_y, type="l", col="green")
+lines(tran_den2[[4]]$tranback_x, tran_den2[[4]]$tranback_y, type="l", col="blue")
+lines(tran_den2[[5]]$tranback_x, tran_den2[[5]]$tranback_y, col="black", lwd=1.5)
+legend("topleft", c(expression(alpha[1]), expression(alpha[2]), expression(alpha[3]), expression(alpha[4]), expression(alpha[5])), col=c("red","pink","black","green","blue"), lty=c(1,1,1,1,1), lwd=c(1,1,1.5,1,1), cex=0.8, bty='n')
+
+tran_den3 <- lapply(data.frame(modes3), function(x){tran_back(x, den.quantiles)}) 
+plot(tran_den3[[1]]$tranback_x, tran_den3[[1]]$tranback_y, type="l",main=paste0("3rd PC modes, ",title, "\n tract:", t, ", measure:", m),
+     xlab="x", ylab=expression(psi^{-1}(x)), 
+     col="red", ylim=c(0, max(c(tran_den3[[1]]$tranback_y, tran_den3[[2]]$tranback_y, 
+                                tran_den3[[3]]$tranback_y, tran_den3[[4]]$tranback_y,
+                                tran_den3[[5]]$tranback_y))))
+abline(h=0, col="grey", lwd=1, lty=2)
+lines(tran_den3[[2]]$tranback_x, tran_den3[[2]]$tranback_y, type="l", col="pink")
+lines(tran_den3[[3]]$tranback_x, tran_den3[[3]]$tranback_y, type="l", col="green")
+lines(tran_den3[[4]]$tranback_x, tran_den3[[4]]$tranback_y, type="l", col="blue")
+lines(tran_den3[[5]]$tranback_x, tran_den3[[5]]$tranback_y, col="black", lwd=1.5)
+legend("topleft", c(expression(alpha[1]), expression(alpha[2]), expression(alpha[3]), expression(alpha[4]), expression(alpha[5])), col=c("red","pink","black","green","blue"), lty=c(1,1,1,1,1), lwd=c(1,1,1.5,1,1), cex=0.8, bty='n')
+
+}
+}
+
+locM <- which.min(c(min(misrate_FA_qdt2), min(misrate_MD_qdt2), min(misrate_Da_qdt2), min(misrate_Dr_qdt2)))
+minM <- c('FA', 'MD', 'Da', 'Dr')[locM]
+minT <- c(as.character(tractnames)[order(misrate_FA_qdt2)[1]], 
+          as.character(tractnames)[order(misrate_MD_qdt2)[1]],
+          as.character(tractnames)[order(misrate_Da_qdt2)[1]],
+          as.character(tractnames)[order(misrate_Dr_qdt2)[1]])[locM]
+
+var_mode(alldata.fb, m=minM, t=minT, title='Ordinary FPCA', qd=0)
+
+var_mode(alldata.fb_qdt, m=minM, t=minT, title='log quantile-density transformation', qd=1)
+
+var_mode(alldata.fb_qdtg, m="Dr", t="ar_l", title='log quantile-density transformation', qd=1) # this plot is based on the "alldata_qdtg1.Rdata"
+
+
+
+## add the density plot that what the true label looks like 
+den_select2 <- alldata.fb_qdt %>% filter(measure=="Dr", tract=="ar_l", group!=3) %>% select(den1:den200,group)
+group2_<- den_select2$group
+den_select2 <- select(den_select2, -group)
+matplot(den.quantiles/100, t(den_select2), type="l", lty=1, col=ifelse(group2_==1, "red","green"))
+
+
+den_select2 <- alldata.fb %>% filter(measure=="Dr", tract=="ar_l", group!=3, player %in% footballname) %>% select(den1:den200,group)
+group2_<- den_select2$group
+den_select2 <- select(den_select2, -group)
+matplot(den.quantiles/100, t(den_select2), type="l", lty=1, col=ifelse(group2_==1, "red","green"), xlab="x", ylab="f(x)", main="True density function:\n tract:ar_l, measure:Dr")
+
+
+summary_arlDr <- sapply(footballloc, function(x){
+  sub.index <- x 
+  subi_obs <- fread(fulldir[x])
+  tract.j <- subi_obs %>% filter(Tract=="ar_l") %>% select(-Tract, "Dr")
+  c(min(tract.j), max(tract.j))
+})
+min(summary_arlDr[1,])
+max(summary_arlDr[2,])
+
+persub_arlDr <- sapply(1:length(fulldir), function(x){
+  #sub.index: 1~195
+  #measure:any measurement subset from c("FA", "MD", "Da", "Dr")
+  sub.index <- x 
+  sub_dir <- fulldir[sub.index]
+  sub.i <- read.csv(sub_dir)
+  sub.i.measure <- sub.i %>% select(Tract,"Dr") %>% filter(Tract=="ar_l")
+  # den.est is a list of length(tracts in sub.index), each element is a matrix of length(measure)x203
+  norm_subi <- (sub.i.measure$Dr - min(summary_arlDr[1,]))/(max(summary_arlDr[2,]) - min(summary_arlDr[1,]))
+  den.col <- density(norm_subi, n=length(norm_subi), na.rm=TRUE)
+  interpl <- approx(den.col$x, den.col$y, den.quantiles/100)
+  interpl$y
+}) 
+
+
+matplot(den.quantiles/100, persub_arlDr[, arlDr_group!=3], type="l", lty=1, col=ifelse(arlDr_group[arlDr_group!=3]==1, "red","green"), xlab="x", ylab="f(x)", main="True density function:\n tract:ar_l, measure:Dr")
+
+
+
+
+
+
+```
